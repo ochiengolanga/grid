@@ -1,13 +1,15 @@
 package com.gu.mediaservice.lib.cleanup
 
-import com.gu.mediaservice.model.{NoRights, Agencies, Agency, Image, StaffPhotographer, ContractPhotographer}
+import com.gu.mediaservice.model.{Agencies, Agency, Image, StaffPhotographer, ContractPhotographer}
 import com.gu.mediaservice.lib.config.PhotographersList
+
+case class ImageProcessorConfig()
 
 trait ImageProcessor {
   def apply(image: Image): Image
 }
 
-object SupplierProcessors {
+object SupplierProcessors extends ImageProcessor {
   val all: List[ImageProcessor] = List(
     GettyXmpParser,
     GettyCreditParser,
@@ -25,7 +27,7 @@ object SupplierProcessors {
     PhotographerParser
   )
 
-  def process(image: Image): Image =
+  def apply(image: Image): Image =
     all.foldLeft(image) { case (im, processor) => processor(im) }
 }
 

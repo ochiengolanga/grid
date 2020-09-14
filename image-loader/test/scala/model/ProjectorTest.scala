@@ -33,7 +33,7 @@ class ProjectorTest extends FunSuite with Matchers with ScalaFutures with Mockit
   private val config = ImageUploadOpsCfg(new File("/tmp"), 256, 85d, Nil, "img-bucket", "thumb-bucket")
 
   private val s3 = mock[AmazonS3]
-  private val projector = new Projector(config, s3, imageOperations)
+  private val projector = new Projector(config, s3, imageOperations, List())
 
   // FIXME temporary ignored as test is not executable in CI/CD machine
   // because graphic lib files like srgb.icc, cmyk.icc are in root directory instead of resources

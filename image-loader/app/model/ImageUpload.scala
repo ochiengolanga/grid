@@ -9,7 +9,7 @@ import com.gu.mediaservice.lib.argo.ArgoHelpers
 import com.gu.mediaservice.lib.auth.Authentication
 import com.gu.mediaservice.lib.auth.Authentication.Principal
 import com.gu.mediaservice.lib.aws.{S3Object, UpdateMessage}
-import com.gu.mediaservice.lib.cleanup.{MetadataCleaners, SupplierProcessors}
+import com.gu.mediaservice.lib.cleanup.{ImageProcessor, MetadataCleaners, SupplierProcessors}
 import com.gu.mediaservice.lib.config.MetadataConfig
 import com.gu.mediaservice.lib.formatting._
 import com.gu.mediaservice.lib.imaging.ImageOperations
@@ -125,7 +125,7 @@ class Uploader(val store: ImageLoaderStore,
                        (implicit logMarker: LogMarker): Future[ImageUpload] = {
     val sideEffectDependencies = ImageUploadOpsDependencies(toImageUploadOpsCfg(config), imageOps,
       storeSource, storeThumbnail, storeOptimisedPng)
-    val finalImage = fromUploadRequestShared(uploadRequest, sideEffectDependencies)
+    val finalImage = fromUploadRequestShared(uploadRequest, sideEffectDependencies, config.imageProcessors)
     finalImage.map(img => Stopwatch("finalImage"){ImageUpload(uploadRequest, img)})
   }
 
@@ -238,7 +238,7 @@ object Uploader {
     )
   }
 
-  def fromUploadRequestShared(uploadRequest: UploadRequest, deps: ImageUploadOpsDependencies)
+  def fromUploadRequestShared(uploadRequest: UploadRequest, deps: ImageUploadOpsDependencies, processors: List[ImageProcessor])
                              (implicit ec: ExecutionContext, logMarker: LogMarker): Future[Image] = {
 
     import deps._
@@ -259,7 +259,9 @@ object Uploader {
         deps,
         uploadedFile,
         fileMetadataFuture,
-        fileMetadata)(ec, addLogMarkers(fileMetadata.toLogMarker))
+        fileMetadata,
+        processors
+      )(ec, addLogMarkers(fileMetadata.toLogMarker))
     })
   }
 
@@ -271,7 +273,8 @@ object Uploader {
                    deps: ImageUploadOpsDependencies,
                    uploadedFile: File,
                    fileMetadataFuture: Future[FileMetadata],
-                   fileMetadata: FileMetadata)
+                   fileMetadata: FileMetadata,
+                   processors: List[ImageProcessor])
                   (implicit ec: ExecutionContext, logMarker: LogMarker) = {
     Logger.info("Have read file metadata")
     Logger.info("stored source file")
@@ -307,7 +310,8 @@ object Uploader {
           fileMetadataFuture,
           colourModelFuture,
           optimisedPng,
-          uploadRequest
+          uploadRequest,
+          processors
         )
         Logger.info(s"Deleting temp file ${uploadedFile.getAbsolutePath}")
         uploadedFile.delete()
@@ -337,8 +341,10 @@ object Uploader {
                            fileMetadataFuture: Future[FileMetadata],
                            colourModelFuture: Future[Option[String]],
                            optimisedPng: OptimisedPng,
-                           uploadRequest: UploadRequest)
+                           uploadRequest: UploadRequest,
+                           imageProcessors: List[ImageProcessor])
                           (implicit ec: ExecutionContext, logMarker: LogMarker): Future[Image] = {
+
     Logger.info("Starting image ops")
     for {
       s3Source <- sourceStoreFuture
@@ -348,9 +354,6 @@ object Uploader {
       thumbDimensions <- thumbDimensionsFuture
       fileMetadata <- fileMetadataFuture
       colourModel <- colourModelFuture
-      fullFileMetadata = fileMetadata.copy(colourModel = colourModel)
-      metadata = ImageMetadataConverter.fromFileMetadata(fullFileMetadata)
-      cleanMetadata = ImageUpload.metadataCleaners.clean(metadata)
 
       sourceAsset = Asset.fromS3Object(s3Source, sourceDimensions)
       thumbAsset = Asset.fromS3Object(s3Thumb, thumbDimensions)
@@ -360,9 +363,12 @@ object Uploader {
       else
         None
 
-      baseImage = ImageUpload.createImage(uploadRequest, sourceAsset, thumbAsset, pngAsset, fullFileMetadata, cleanMetadata)
+      fullFileMetadata = fileMetadata.copy(colourModel = colourModel)
+      metadata = ImageMetadataConverter.fromFileMetadata(fullFileMetadata)
 
-      processedImage = SupplierProcessors.process(baseImage)
+      baseImage = ImageUpload.createImage(uploadRequest, sourceAsset, thumbAsset, pngAsset, fullFileMetadata, metadata)
+
+      processedImage = imageProcessors.foldLeft(baseImage){ case (acc, processor) => processor(acc) }
 
       // FIXME: dirty hack to sync the originalUsageRights and originalMetadata as well
       finalImage = processedImage.copy(

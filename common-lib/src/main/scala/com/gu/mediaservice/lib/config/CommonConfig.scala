@@ -76,6 +76,10 @@ trait CommonConfig extends AwsClientBuilderUtils {
     properties(key).split(",").map(_.trim).toSet
   ).getOrElse(Set.empty)
 
+  final def getStringListFromProperties(key: String, default: String): List[String] = Try(
+    properties.getOrElse(key, default).split(",").map(_.trim).filter(_.nonEmpty).toList
+  ).getOrElse(List.empty)
+
   final def apply(key: String): String =
     string(key)
 
