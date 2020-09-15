@@ -33,7 +33,7 @@ class ImageLoaderConfig(override val configuration: Configuration) extends Commo
   val imageProcessors: List[ImageProcessor] = {
     val ImageProcessorClass: Regex = "class:(.*)".r
 
-    val imageProcessorMaybes: List[Either[String, ImageProcessor]] = getStringListFromProperties("image.processors", "SupplierProcessors, MetadataCleaners").map {
+    val imageProcessorMaybes: List[Either[String, ImageProcessor]] = getStringListFromProperties("image.processors", "MetadataCleaners, SupplierProcessors").map {
       case ImageProcessorClass(className) => ImageProcessorClassReflector.loadImageProcessor(className, ImageProcessorConfig())
       case "SupplierProcessors" => scala.Right(SupplierProcessors)
       case "MetadataCleaners" => scala.Right(new MetadataCleaners(MetadataConfig.allPhotographersMap))
